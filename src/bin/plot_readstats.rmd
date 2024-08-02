@@ -1,0 +1,179 @@
+---
+title: "Plots for read stats"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: no
+    code_folding: hide
+params:
+    map_tab: x
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+```
+
+```{r include=FALSE}
+library(rmarkdown)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(scales)
+library(zoo)
+library(httpgd)
+```
+
+# Load mapping table
+```{r}
+map_tab <- read.csv(params$map_tab, sep = '\t', header = TRUE)
+
+# map_tab <- read.csv("/home/ubuntu/aav_integration/v1.0.0/data/interim/shortRead/240112_VH00163_77_AAF5V37M5__mapped_table.tsv", sep = '\t', header = TRUE)
+map_tab$Sample <- sub("_a1", '', map_tab$Sample)
+
+map_tab <- map_tab %>% 
+    mutate(sorting_key = as.numeric(str_extract(Sample, "(?<=_S)\\d+$")),
+            Sample = factor(Sample, levels = Sample[order(sorting_key)]))
+
+data <- map_tab %>%
+    mutate(unmapped_reads = tot_input - mixedGenome) %>%
+    rename(mapped_reads = mixedGenome)
+
+# convert to reads per million
+data_rpm <- data %>% 
+    select(2, 4, 11, 13:21,23) %>%
+    mutate(across(-matches("Sample"), ~ (. / tot_input) * 10^6))
+```
+
+# Fig 1: Total read numbers for each sample 
+```{r}
+ggplot(data, aes(x = Sample, y = tot_input)) + 
+    geom_bar(stat = "identity") +
+    theme_minimal() +
+    labs(x = "Sample", y = "Total reads", title = "# of Total reads") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20)) +
+    scale_y_continuous(labels = scales::scientific)
+
+```
+
+# Fig 2: % mapped Fraction 
+- raw reads  
+```{r}
+
+# Convert to long format
+data_long <- data %>%
+    select(Sample, mapped_reads, unmapped_reads) %>%
+    pivot_longer(cols = c(mapped_reads, unmapped_reads),
+                names_to = "type",
+                values_to = "reads")
+
+data_long$type <- factor(data_long$type, levels = c("unmapped_reads", "mapped_reads"))
+
+ggplot(data_long, aes(x = Sample, y = reads, fill = type)) +
+    geom_bar(stat = "identity", position = "stack") +
+    # scale_y_continuous(labels = scales::percent) +
+    labs(x = "Sample Names", y = "Reads", title = "Mapped and Unmapped Reads") +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_fill_manual(values = c("mapped_reads" = "#026d02", "unmapped_reads" = "#d70707")) +
+    scale_y_continuous(labels = scales::scientific)
+```
+
+- scaled to 100%  
+```{r}
+ggplot(data_long, aes(x = Sample, y = reads, fill = type)) +
+    geom_bar(stat = "identity", position = "fill") +
+    # scale_y_continuous(labels = scales::percent) +
+    labs(x = "Sample Names", y = "Percentage of reads", title = "Mapped and Unmapped Reads") +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_fill_manual(values = c("mapped_reads" = "#026d02", "unmapped_reads" = "#d70707")) +
+    scale_y_continuous(labels = scales::percent)
+
+
+```
+
+
+# Fig 3. vector reads
+- raw reads  
+```{r}
+ggplot(data, aes(x = Sample, y = vectorGenome)) + 
+    geom_bar(stat = "identity") +
+    theme_minimal() +
+    labs(x = "Sample", y = "Reads", title = "# of reads mapped to vector") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20)) +
+    scale_y_continuous(labels = scales::scientific)
+```
+
+- normalized to total reads (reads per million)  
+```{r}
+# reads per million
+ggplot(data_rpm, aes(x = Sample, y = vectorGenome)) + 
+    geom_bar(stat = "identity") +
+    theme_minimal() +
+    labs(x = "Sample", y = "Reads per million", title = "Reads mapped to vector (RPM)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20)) +
+    scale_y_continuous(labels = scales::scientific)
+```
+
+# Fig 4: % reads after filters:  
+- 1, remove PCR duplicates  
+- 2, remove non properly paired reads on host genome 
+- 3, remove non uniquely mapped reads (only for v1.1.1 pipeline)  
+
+```{r}
+df_long <- data %>% select(Sample, mapped_reads, starts_with("mixedGenome_")) %>% 
+    mutate(across(starts_with("mixedGenome_"), ~ . / mapped_reads * 100)) %>%
+    pivot_longer(cols = starts_with("mixedGenome_"), names_to = "category", values_to = "frac_reads")
+
+df_long$category <- gsub("mixedGenome_", "", df_long$category)
+
+df_long$category <- factor(df_long$category, levels = c("rmdup", "rmdup_paired"))
+
+ggplot(df_long, aes(x = Sample, y = frac_reads, fill = category)) +
+    geom_bar(stat = "identity", position = position_dodge()) +
+    scale_fill_brewer(palette = "Pastel1") +
+    labs(x = "Sample", y = "% reads remained", title = "Reads remained after filters") +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+# Fig 5: subtypes of chimeric reads
+- raw reads  
+```{r}
+df_long <- data %>% select(Sample, vector_vector, host_host, vector_host) %>%
+    pivot_longer(cols = !"Sample", names_to = "subtype", values_to = "Reads")
+
+ggplot(df_long, aes(x = Sample, y = Reads, fill = subtype)) +
+    geom_bar(stat = "identity", position = "stack") +
+    scale_fill_brewer(palette = "Pastel1") + # Optional: Use a color palette
+    labs(x = "Sample", y = "Reads", title = "Subtype of chimeric reads") +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+- scaled to 100%  
+```{r}
+df_long <- data %>% select(Sample, vector_vector, host_host, vector_host) %>%
+    pivot_longer(cols = !"Sample", names_to = "subtype", values_to = "Reads")
+
+ggplot(df_long, aes(x = Sample, y = Reads, fill = subtype)) +
+    geom_bar(stat = "identity", position = "fill") +
+    scale_fill_brewer(palette = "Pastel1") + # Optional: Use a color palette
+    labs(x = "Sample", y = "Percentage of read", title = "Subtype of chimeric reads") +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle = 45, hjust = 1))
+
+```

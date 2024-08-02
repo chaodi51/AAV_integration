@@ -1,0 +1,7 @@
+{"PROJ_DIR_v100":"/mnt/bfx-ops/projects/2023/aav_integration/v1.0.0/",
+"PROJ_DIR_v111":"/mnt/bfx-ops/projects/2023/aav_integration/v1.1.1/",
+"TRIM_FQ_DIR":"/mnt/bfx-ops/projects/2022/illumina-pre-process_Chao/data/interim/trimmed/",
+"MERGE_TAB":"/mnt/bfx-ops/projects/2022/illumina-pre-process_Chao/data/interim/shortRead/",
+"QC":"/mnt/bfx-ops/projects/2022/illumina-pre-process_Chao/data/interim/qc_reports/",
+"SITE":"/mnt/bfx-ops/projects/2023/aav_integration/v1.0.0/src/rmd/site/aav_integration_v1_0_0/",
+"SITE_NAME":"aav_integration_v1_0_0"}

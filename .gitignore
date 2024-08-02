@@ -1,0 +1,21 @@
+## spark
+
+# exclude everything
+git.sh
+data/refs/*
+data/interim/*
+data/processed/*
+data/raw/*
+src/rmd/site/*
+src/.config/
+src/.cache
+src/logs/
+src/.fontconfig/
+src/.snakemake/
+src/.parallel
+src/__pycache__
+# exception to the rule
+!data/raw/.keep
+!data/ref/.keep
+!data/interim/.keep
+!src/rmd/site/.keep

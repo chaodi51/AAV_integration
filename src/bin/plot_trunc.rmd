@@ -1,0 +1,71 @@
+---
+title: "IS frequency plots"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: yes
+    code_folding: hide
+params:
+    files: x
+    anno: y
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+```
+
+```{r include=FALSE}
+library(rmarkdown)
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(zoo)
+```
+
+
+## Truncation hotspots plot
+```{r}
+all_files <- unlist(strsplit(params$files, " "))
+# all_files <- list.files("~/aav_integration/v1.1.1/data/interim/IS_results/IS_reads/shortRead/230720_M05240_0127_000000000-KVV5C/")
+
+vector_anno <- read.csv(params$anno, sep = '\t', header = FALSE)
+vector_name <- unique(vector_anno$V1)
+ITR_anno <- vector_anno[grep('ITR', vector_anno$V4), ]
+ITR_5P_s <- ITR_anno[grep('5P', ITR_anno$V4), 2] + 1
+ITR_5P_e <- ITR_anno[grep('5P', ITR_anno$V4), 3]
+
+ITR_3P_s <- ITR_anno[grep('3P', ITR_anno$V4), 2] + 1
+ITR_3P_e <- ITR_anno[grep('3P', ITR_anno$V4), 3]
+
+for (i in all_files[grepl(pattern = "__IS.csv", all_files)]){
+    tmp <- unlist(strsplit(i, "/"))
+    sample <- gsub("__IS.csv", "", tmp[length(tmp)])
+    cat(sample, "\n")
+    df <- read.csv(i)
+    
+    value_freq <- table(df$vector_align_clip_pos)
+    df_plot <- data.frame(Pos = as.numeric(names(value_freq)), Count = as.numeric(value_freq))
+    df_plot$Region <- ifelse(between(df_plot$Pos, ITR_5P_e + 1, ITR_3P_s - 1), "others", "ITR")
+
+    p <- ggplot(df_plot, aes(x = Pos, y = Count)) +
+        geom_col(aes(color = Region, fill = Region)) +
+        labs(title = "IS positions") +
+        scale_color_manual(breaks = c("others", "ITR"),
+        values = c("blue", "red")) +
+        scale_fill_manual(breaks = c("others", "ITR"),
+        values = c("blue", "red")) +
+        xlim(ITR_5P_s, ITR_3P_e) +
+        theme_bw() +
+        theme(plot.title = element_text(hjust = 0.5),
+              legend.position = "top",
+              plot.background = element_blank(),
+              panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank())
+
+    print(p) # must use print in loops
+}
+```

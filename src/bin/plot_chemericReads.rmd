@@ -1,0 +1,77 @@
+---
+title: "vector-vector chimeric reads clip positions plot"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: yes
+    code_folding: hide
+params:
+    files: x
+    anno: y
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+```
+
+```{r include=FALSE}
+library(rmarkdown)
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(zoo)
+```
+
+
+## Truncation hotspots plot
+```{r fig.width=20, fig.height=18}
+all_files <- list.files(params$files, pattern = '\\.csv$', full.names = TRUE)
+vector_anno <- read.csv(params$anno, sep = '\t', header = FALSE)
+
+# all_files <- list.files("~/aav_integration/v1.0.0/data/interim/chimera_results/chimera_reads/shortRead/240214_VH00163_87_AAF5W7NM5/", pattern = '\\.csv$', full.names = TRUE)
+# vector_anno <- read.csv("/mnt/bfx-ops/projects/2023/aav_integration/v1.0.0/data/refs/vector/anno/CAG_EGFP_ITR_corrected.bed", sep = '\t', header = FALSE)
+
+vector_name <- unique(vector_anno$V1)
+ITR_anno <- vector_anno[grep('ITR', vector_anno$V4), ]
+ITR_5P_s <- ITR_anno[grep('5P', ITR_anno$V4), 2] + 1
+ITR_5P_e <- ITR_anno[grep('5P', ITR_anno$V4), 3]
+
+ITR_3P_s <- ITR_anno[grep('3P', ITR_anno$V4), 2] + 1
+ITR_3P_e <- ITR_anno[grep('3P', ITR_anno$V4), 3]
+
+## combine files
+list_of_data_frames <- lapply(all_files, function(file) {
+    df <- read.csv(file, header = TRUE)
+    if(nrow(df) > 0) {
+        df$sample <- gsub("_a1__CAG_EGFP_ITR_corrected__chimera\\.csv", "", basename(file))
+        return(df)
+    }
+})
+
+combined_df <- do.call(rbind, list_of_data_frames)
+
+data <- combined_df %>%
+    filter(chrom == 'chrV', suppl_chrom == 'chrV') %>%
+    select(sample, ref_clip_pos_pri_major)
+
+data$region <- ifelse(between(data$ref_clip_pos_pri_major, ITR_5P_e + 1, ITR_3P_s - 1), "others", "ITR")
+
+data <- data[order(data$sample, data$ref_clip_pos_pri_major),]
+
+ggplot(data, aes(x = ref_clip_pos_pri_major, fill = region, color = region)) +
+    geom_histogram(position = "dodge", binwidth = 10) +
+    theme_minimal() +
+    labs(x = "Vector Clip Position", y = "Number of reads", title = "vector-vector chimeric positions along the vector") +
+    scale_fill_manual(values = c("others" = 'blue', "ITR" = 'red')) +
+    scale_color_manual(values = c("others" = 'blue', "ITR" = 'red')) +
+    facet_wrap(~sample, scales = 'free', ncol = 4, strip.position = "top") + 
+    xlim(ITR_5P_s, ITR_3P_e) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5, size = 15),
+            legend.position = "top")
+
+```

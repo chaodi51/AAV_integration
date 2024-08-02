@@ -1,0 +1,125 @@
+---
+title: "Circos plots for AAV integration sites visulization"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: yes
+    code_folding: hide
+params:
+    files: x
+    anno: y
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+```
+
+```{r include=FALSE}
+library(rmarkdown)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(circlize)
+library(data.table)
+```
+
+## Step1: load reference data
+```{r}
+# vector_anno <- read.csv("/mnt/bfx-ops/projects/2023/aav_integration/v1.0.0/data/refs/vector/anno/CAG_EGFP_ITR_corrected.bed", sep = '\t', header = FALSE)
+# vector_name <- unique(vector_anno$V1)
+
+# Creating a joint cytoband (sectors and index for plot)
+host.band <- read.chromInfo("~/references/Mus_musculus/UCSC/mm39/Annotation/chromInfo.txt.gz")$df %>% 
+  filter(!grepl('_|chrM', chr)) %>% 
+  mutate(chr = str_replace(chr, "chr", ""))
+
+
+# aav.band <- as.data.frame(data.table(chr = c("chr_itr_5pr","cmv_enhancer","promoter",
+#                                               "intron","EGFP","polyA","itr_3pr"),
+#                                     start = c(1,183,548,829,1915,2643,2879),
+#                                     end = c(145,547,829,1795,2634,2870,3023)))
+
+
+aav.band <- as.data.frame(data.table(chr = c("5ITR","Vector","3ITR"),
+                                    start = c(0,146,2878),
+                                    end = c(145,2877,3023)))
+
+# Comb band
+cytoband <- rbind(host.band, aav.band)
+
+chromosome.index = c(unique(cytoband$chr))
+
+cytoband$chr <- factor(cytoband$chr, levels = chromosome.index)
+
+# Rescaling the AAV size to emphasize it
+xrange = c(cytoband %>% filter(chr %in% c(seq(1:19),"X", "Y"))%>% pull(end),
+            cytoband %>% filter(!chr %in% c(seq(1:19),"X", "Y")) %>% mutate(length=end-start) %>% pull(length))
+normal_chr_index = 1:21
+zoomed_chr_index = 22:24
+
+# normalize in normal chromsomes and zoomed chromosomes separately
+sector.width = c(xrange[normal_chr_index] / sum(xrange[normal_chr_index]), 
+              0.3*xrange[zoomed_chr_index] / sum(xrange[zoomed_chr_index])) 
+
+```
+
+## Step2: extracting data to be plotted
+```{r}
+
+# IS data
+file <- "~/aav_integration/v1.1.1/data/interim/IS_results/IS_events_anno/shortRead/240112_VH00163_77_AAF5V37M5/012_S5_S5_a1__CAG_EGFP_ITR_corrected__IS.csv"
+IS_events <- read.csv(file, header = TRUE)
+IS_events <- IS_events[,2:7]
+IS_events <- IS_events %>% filter(unique_sonications >=2)
+# Clean the list_column by removing unwanted characters
+IS_events$vector_align_clip_pos <- gsub("\\[|\\]|'", "", IS_events$vector_align_clip_pos)
+
+expanded_IS_events <- IS_events %>%
+  mutate(chrom = str_replace(chrom, "chr", "")) %>%
+  filter(!grepl('M', chrom)) %>% 
+  separate_rows(vector_align_clip_pos, sep = ",\\s*") %>%  group_by(across(everything())) %>%
+  summarize(reads_per_clip = n(), .groups = 'drop') %>%
+  rename(chr = chrom)
+
+
+# Creating the two bed files
+t.host <- expanded_IS_events %>%
+  mutate(end = IS_pos + 1) %>% 
+  select(chr, IS_pos) %>% 
+  rename(start = IS_pos) %>% as.data.frame()
+
+t.vir <- expanded_IS_events %>%
+    mutate(vector_align_clip_pos = as.integer(vector_align_clip_pos),
+          end = vector_align_clip_pos + 1,
+          chr = case_when(
+            vector_align_clip_pos < 145 ~ "5ITR",
+            vector_align_clip_pos < 2879 ~ "Vector",
+            vector_align_clip_pos >= 2879 ~ "3ITR"
+          )) %>% 
+    select(chr, start = vector_align_clip_pos) %>% as.data.frame()
+
+
+
+circos.par("start.degree" = 90)
+circos.initializeWithIdeogram(cytoband, chromosome.index = chromosome.index, sector.width = sector.width, plotType = NULL)
+
+circos.track(ylim = c(0, 1), panel.fun = function(x, y) {
+    chr = CELL_META$sector.index
+    xlim = CELL_META$xlim
+    ylim = CELL_META$ylim
+    circos.rect(xlim[1], 0, xlim[2], 1)
+    circos.text(mean(xlim), mean(ylim), chr, cex = 0.7, col = "blue",
+        facing = "inside", niceFacing = TRUE, font =2)
+}, track.height = 0.1, bg.border = NA)
+
+circos.genomicLink(t.host, t.vir, col = 'red', lwd = 0.5)
+
+circos.clear()
+```
+
+

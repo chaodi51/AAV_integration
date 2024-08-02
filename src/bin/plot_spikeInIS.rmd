@@ -1,0 +1,124 @@
+---
+title: "Plots for spikeIn"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: no
+    code_folding: hide
+params:
+    map_tab: x
+    IS_tab: y
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+```
+
+```{r include=FALSE}
+library(rmarkdown)
+library(ggplot2)
+library(randomcoloR)
+library(dplyr)
+library(tidyr)
+library(DT)
+library(tidyverse)
+library(stringr)
+library(scales)
+library(zoo)
+library(httpgd)
+library(gtools)
+library(knitr)
+library(circlize)
+library(data.table)
+```
+
+# Load data
+The final IS table looks as follows  
+```{r}
+IS_tab <- read.csv(params$IS_tab, header = TRUE, check.names = FALSE)
+data_is_empty <- nrow(IS_tab) == 0
+
+map_tab <- read.csv(params$map_tab, sep = '\t', header = TRUE)
+# IS_tab <- read.csv("/home/ubuntu/aav_integration/v1.0.0/data/interim/spikeIn_IS_results/spikeIn_IS_events_comb/shortRead/230816_M71053_29_000000000-LBGW4__spikeIn_IS.csv", check.names = FALSE, header = TRUE)
+# map_tab <- read.csv("/home/ubuntu/aav_integration/v1.0.0/data/interim/shortRead/230816_M71053_29_000000000-LBGW4__mapped_table.tsv", sep = '\t', header = TRUE)
+
+IS_tab$sample <- sub("_a1", '', IS_tab$sample)
+map_tab$Sample <- sub("_a1", '', map_tab$Sample)
+map_tab <- map_tab %>% rename(sample = Sample)
+
+map_tab <- map_tab %>%
+    mutate(sorting_key = as.numeric(str_extract(sample, "(?<=_S)\\d+$")),
+            sample = factor(sample, levels = sample[order(sorting_key)]))
+
+
+IS_tab <- IS_tab %>%
+    mutate(sorting_key = as.numeric(str_extract(sample, "(?<=_S)\\d+$")),
+            sample = factor(sample, levels = unique(sample[order(sorting_key)]))) %>%
+    filter(IS_pos <= 1010 & IS_pos >= 990) %>%
+    select(sample,chrom, IS_pos, nReads, unique_sonications) %>%
+    mutate(chrom = str_replace(chrom, "_woITR", ""))
+
+
+# kable(head(IS_tab[, -ncol(IS_tab)]))
+```
+
+# Fig 1: Number of spikeIn integration sites
+- raw number  
+```{r, eval=!data_is_empty}
+data <- IS_tab %>% group_by(sample, chrom) %>% summarise(count = n(), .groups = "drop")
+tot_reads <- map_tab %>% select(sample, tot_input)
+data1 <- right_join(tot_reads, data)
+data1 <- data1 %>% mutate(norm_count = count / tot_input * 10^6)
+
+ggplot(data1, aes(x = chrom, y = count)) + 
+    geom_bar(stat = "identity") +
+    facet_wrap(~ sample) +
+    theme_minimal() +
+    labs(x ="Standard", y = "IS number", title = "# of unique IS") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+
+```
+
+- normalized to total reads (reads per million)  
+```{r, eval=!data_is_empty}
+ggplot(data1, aes(x = chrom, y = norm_count)) + 
+    geom_bar(stat = "identity") +
+    facet_wrap(~ sample) +
+    theme_minimal() +
+    labs(x = "Standard", y = "IS number per million reads", title = "# of unique IS (RPM)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```
+
+# Fig 2: Reads per spikeIn IS
+```{r,fig.width= 10, fig.height= 12, eval=!data_is_empty}
+
+data <- IS_tab
+
+ggplot(data, aes(y = nReads, x = chrom)) +
+    geom_boxplot() +
+    theme_minimal() +
+    facet_wrap(~sample, scales = 'free', strip.position = "top") + 
+    labs(x = "Standard", y = "# reads per IS", title = "Read abundance per IS") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```
+
+# Fig 3: Clonal abundance per spikeIn IS
+```{r,fig.width= 10, fig.height= 12, eval=!data_is_empty}
+
+data <- IS_tab
+
+ggplot(data, aes(y = unique_sonications, x = chrom)) +
+    geom_boxplot() +
+    theme_minimal() +
+    facet_wrap(~sample, scales = 'free', strip.position = "top") + 
+    labs(x = "Standard", y = "# reads per IS", title = "Clonal abundance per IS") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```

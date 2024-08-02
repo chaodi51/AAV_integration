@@ -1,0 +1,556 @@
+---
+title: "Plots for integration sites (IS)"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: no
+    code_folding: hide
+params:
+    map_tab: x
+    IS_tab: y
+    anno: z
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+```
+
+```{r include=FALSE}
+library(rmarkdown)
+library(ggplot2)
+library(patchwork)
+library(randomcoloR)
+library(dplyr)
+library(tidyr)
+library(DT)
+library(tidyverse)
+library(stringr)
+library(scales)
+library(zoo)
+library(httpgd)
+library(gtools)
+library(knitr)
+library(circlize)
+library(data.table)
+library(colorspace)
+```
+
+# Load data
+The final IS table looks as follows  
+```{r}
+IS_tab <- read.csv(params$IS_tab, header = TRUE, check.names = FALSE)
+map_tab <- read.csv(params$map_tab, sep = '\t', header = TRUE)
+vector_anno <- read.csv(params$anno, sep = '\t', header = FALSE)
+
+# IS_tab <- read.csv("/home/ubuntu/aav_integration/v1.0.0/data/interim/IS_results_final/IS_events_anno/shortRead/230816_M71053_29_000000000-LBGW4__IS_final.anno.csv", check.names = FALSE, header = TRUE)
+# map_tab <- read.csv("/home/ubuntu/aav_integration/v1.0.0/data/interim/shortRead/230816_M71053_29_000000000-LBGW4__mapped_table.tsv", sep = '\t', header = TRUE)
+
+# IS_tab <- read.csv('/mnt/bfx-ops/projects/2023/aav_integration/v1.0.0/data/interim/IS_results_final/IS_events_anno/shortRead/240214_VH00163_87_AAF5W7NM5__IS_final.anno.csv', check.names = FALSE, header = TRUE)
+# map_tab <- read.csv("/home/ubuntu/aav_integration/v1.0.0/data/interim/shortRead/240214_VH00163_87_AAF5W7NM5__mapped_table.tsv", sep = '\t', header = TRUE)
+
+# IS_tab <- read.csv('/mnt/bfx-ops/projects/2023/aav_integration/v1.0.0/data/interim/IS_results_final/IS_events_anno/shortRead/230817_LH00401_55_223JYKLT4_LMPCR__IS_final.anno.csv', check.names = FALSE, header = TRUE)
+# map_tab <- read.csv("/home/ubuntu/aav_integration/v1.0.0/data/interim/shortRead/230817_LH00401_55_223JYKLT4_LMPCR__mapped_table.tsv", sep = '\t', header = TRUE)
+
+# IS_tab <- read.csv('/mnt/bfx-ops/projects/2023/aav_integration/v1.0.0/data/interim/IS_results_final/IS_events_anno/shortRead/240405_M05240_0149_000000000-L9FLR_mouse__IS_final.anno.csv', check.names = FALSE, header = TRUE)
+# map_tab <- read.csv("/mnt/bfx-ops/projects/2023/aav_integration/v1.0.0/data/interim/shortRead/240405_M05240_0149_000000000-L9FLR_mouse__mapped_table.tsv", sep = '\t', header = TRUE)
+
+IS_tab$sample <- sub("_a1", '', IS_tab$sample)
+map_tab$Sample <- sub("_a1", '', map_tab$Sample)
+map_tab <- map_tab %>% rename(sample = Sample)
+
+map_tab <- map_tab %>%
+    mutate(sorting_key = as.numeric(str_extract(sample, "(?<=_S)\\d+$")),
+            sample = factor(sample, levels = sample[order(sorting_key)]))
+
+
+IS_tab <- IS_tab %>%
+    mutate(sorting_key = as.numeric(str_extract(sample, "(?<=_S)\\d+$")),
+            sample = factor(sample, levels = unique(sample[order(sorting_key)]))) 
+
+if (!map_tab$run[1] %in% c('240405_M05240_0149_000000000-L9FLR', '240328_VH00163_94_AAFJHJGM5',
+                            '240405_M05240_0149_000000000-L9FLR_mouse', '240328_VH00163_94_AAFJHJGM5_mouse')) {
+    IS_tab <- IS_tab %>% filter(!grepl("S[1-4]$", biosample))
+} 
+
+kable(head(IS_tab[, -ncol(IS_tab)]))
+```
+
+# Fig 6: Number of integration sites
+- raw number  
+```{r}
+data <- IS_tab %>% select(sample) %>% group_by(sample) %>% summarise(count = n())
+tot_reads <- map_tab %>% select(sample, tot_input)
+data1 <- left_join(tot_reads, data)
+data1 <- data1 %>% mutate(norm_count = count / tot_input * 10^6)
+
+ggplot(data1, aes(x = sample, y = count)) + 
+    geom_bar(stat = "identity") +
+    theme_minimal() +
+    labs(x = "Sample", y = "IS number", title = "# of unique IS") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+
+```
+
+- normalized to total reads (reads per million)  
+```{r}
+ggplot(data1, aes(x = sample, y = norm_count)) + 
+    geom_bar(stat = "identity") +
+    theme_minimal() +
+    labs(x = "Sample", y = "IS number per million reads", title = "# of unique IS (RPM)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```
+
+# Fig 7: distribution of IS across chromosomes   
+```{r}
+data <- IS_tab %>% select(chrom) %>% group_by(chrom) %>% summarise(count = n())
+data$chrom <- factor(data$chrom, levels = mixedsort(data$chrom))
+
+ggplot(data, aes(x = chrom, y = count)) + 
+    geom_bar(stat = "identity") +
+    theme_minimal() +
+    labs(x = "Chromosome", y = "IS number", title = "# of unique IS across chromosomes") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```
+
+
+# Fig 8: Frequency of IS inside genes 
+```{r}
+data <- IS_tab %>% select(sample, host_inGene)
+data_summary <- data %>%
+    group_by(sample) %>%
+    summarise(Proportion = mean(host_inGene == 1)) %>%
+    ungroup()
+
+ggplot(data_summary, aes(x = sample, y = Proportion)) +
+    geom_bar(stat = "identity") +
+    labs(x = "Sample", y = "Proportion", title = "Frequency of IS inside genes") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5, size = 20)) +
+    scale_y_continuous(labels = percent_format(scale = 100))
+```
+
+
+# Fig 9: Frequency of IS in CpG islands  
+```{r}
+data <- IS_tab %>% select(sample, cpg_ingene)
+data_summary <- data %>%
+    group_by(sample) %>%
+    summarise(Proportion = mean(cpg_ingene == 1)) %>%
+    ungroup()
+
+ggplot(data_summary, aes(x = sample, y = Proportion)) +
+    geom_bar(stat = "identity") +
+    labs(x = "Sample", y = "Proportion", title = "Frequency of IS inside CpG island") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5, size = 20)) +
+    scale_y_continuous(labels = percent_format(scale = 100))
+```
+
+
+# Fig 10: Frequency of IS in liver specific enhancer regions    
+```{r}
+data <- IS_tab %>% select(sample, enh_ingene)
+data_summary <- data %>%
+    group_by(sample) %>%
+    summarise(Proportion = mean(enh_ingene == 1)) %>%
+    ungroup()
+
+ggplot(data_summary, aes(x = sample, y = Proportion)) +
+    geom_bar(stat = "identity") +
+    labs(x = "Sample", y = "Proportion", title = "Frequency of IS inside liver specific enhancer regions") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5, size = 20)) +
+    scale_y_continuous(labels = percent_format(scale = 100))
+```
+
+
+# Fig 11: Frequency of IS in vicinity (+/- 50kb) of TSS  
+```{r fig.width=12, fig.height=6}
+data <- IS_tab %>% select(sample, host_closest_TSS_dist)
+data <- data %>%
+    filter(host_closest_TSS_dist >= -100000 & host_closest_TSS_dist <= 100000)
+
+# Classify the distances into bins
+data$distance_bin <- cut(data$host_closest_TSS_dist, breaks=seq(-105000, 105000, by=10000), labels <- seq(-100, 100, by=10), include.lowest=TRUE)
+
+# Calculate frequencies for each sample within each bin
+df_grouped <- data %>%
+    group_by(sample, distance_bin) %>%
+    summarise(frequency = n())
+
+ggplot(df_grouped, aes(x = distance_bin, y = frequency, fill = sample)) +
+    geom_bar(stat = "identity", position="dodge") +
+    theme_minimal() +
+    labs(x = "Distance from closest TSS (Kb)", y = "Relative Frequency", title = "Distribution of Distances from TSS (kb)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+
+```
+
+
+
+# Fig 12: Frequency of IS in proximity (inside and up to 50kb upstream of TSS) to CancerCensus(v98) Genes  
+In addition to summarizing the insertion frequencies in the different groups we also have to determine  
+when those insertions occur in cancer genes. So we are using the Cancer Gene Census (updated to v98) from   
+Sanger which is derived from COSMIC (https://cancer.sanger.ac.uk/census)  
+
+```{r}
+# load COSMC v98 cancer gene table
+cgc_98 <- read.csv("~/aav_integration/v1.0.0/configs/Cosmic_CancerGeneCensus_v98_GRCh38.tsv", sep = "\t")
+cancGenes <- unique(cgc_98[,1])
+# kable(head(cgc_98))
+IS_tab <- IS_tab %>%
+    mutate(orth_closest_gene = map_chr(str_split(orth_closest_TSS_info, ";"), 1))
+
+IS_tab$CancerGene <- ifelse(IS_tab$orth_closest_gene %in% cancGenes, TRUE, FALSE)
+```
+
+**Frequencies of IS NEAR(upstream 100kb of TSS) or IN cancer genes**
+```{r}
+data <- IS_tab %>% filter(CancerGene == TRUE & (orth_inGene == 1 | (orth_closest_TSS_dist > 0 & orth_closest_TSS_dist < 100000))) %>% 
+    select(sample) %>%
+    group_by(sample) %>%
+    summarise(count = n())
+
+ggplot(data, aes(x = sample, y = count)) + 
+    geom_bar(stat = "identity") +
+    theme_minimal() +
+    labs(x = "Sample", y = "IS number", title = "# of unique IS") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```
+
+**Frequencies of insertions only IN cancer genes**
+
+```{r}
+data <- IS_tab %>% filter(CancerGene == TRUE & orth_inGene == 1) %>% 
+    select(sample) %>% 
+    group_by(sample) %>% 
+    summarise(count = n())
+
+ggplot(data, aes(x = sample, y = count)) + 
+    geom_bar(stat = "identity") +
+    theme_minimal() +
+    labs(x = "Sample", y = "IS number", title = "# of unique IS") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```
+
+## Cancer Gene Table
+
+```{r}
+CancGeneTable <- IS_tab %>% 
+    filter(CancerGene == TRUE & (orth_inGene == 1 | (orth_closest_TSS_dist > 0 & orth_closest_TSS_dist < 100000))) %>%
+    select(sample, chrom, IS_pos, orth_closest_gene, orth_inGene, orth_closest_TSS_info, orth_closest_TSS_dist)
+
+colnames(CancGeneTable) <- c("Sample", "IS_chrom", "IS_position", "Cancer_gene_symbol", "In_Cancer_Gene", "Gene_info(Symbol;NCBI_id;chrom;start;end;strand)", "IS_TSS_distance(bp)")
+
+output_file <- paste0(unique(map_tab$run), '_IS_associated_cancGeneTable')
+datatable(CancGeneTable, rownames = FALSE, filter = "top", extensions = 'Buttons', options = list(
+        dom = 'Bfrtip',
+        buttons = list(
+            list(extend = 'copy', filename = output_file),
+            list(extend = 'csv', filename = output_file),
+            list(extend = 'excel', filename = output_file)
+        )
+    )
+)
+```
+
+# Fig 13: Reads per IS
+```{r,fig.width= 10, fig.height= 12}
+data <- IS_tab %>%
+    select(sample, nReads)
+
+ggplot(data, aes(y = nReads)) +
+    geom_boxplot() +
+    theme_minimal() +
+    facet_wrap(~sample, scales = 'free', ncol = 10) + 
+    labs(x = "Sample", y = "# reads per IS", title = "Read abundance per IS") +
+    theme(axis.text.x = element_blank(), 
+        strip.text.x = element_text(angle = 45, hjust = 0.5),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```
+
+# Fig 14: Clonal abundance per IS
+```{r,fig.width= 10, fig.height= 12}
+data <- IS_tab %>%
+    select(sample, unique_sonications)
+
+ggplot(data, aes(y = unique_sonications)) +
+    geom_boxplot() +
+    theme_minimal() +
+    facet_wrap(~sample, scales = 'free', ncol = 10) + 
+    labs(x = "Sample", y = "Unique sonication sites", title = "Clonal abundance") +
+    theme(axis.text.x = element_blank(), 
+        strip.text.x = element_text(angle = 45, hjust = 0.5),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```
+
+# Fig 14S: Distribution of number of genomes (clonal abundance) per IS
+```{r,fig.width= 10, fig.height= 12}
+data <- IS_tab %>%
+    select(sample, unique_sonications)
+
+# Transform the data: values > 10 become "greater than 10"
+data$unique_sonications <- ifelse(data$unique_sonications > 10, ">10", as.character(data$unique_sonications))
+data$unique_sonications <- factor(data$unique_sonications, levels = c(as.character(1:10), ">10"))
+
+freq_df <- data %>%
+    group_by(sample, unique_sonications) %>%
+    summarise(Count = n()) %>%
+    mutate(Percentage = (Count / sum(Count)) * 100)
+
+ggplot(freq_df, aes(x = unique_sonications, y = Percentage)) +
+    geom_bar(stat = "identity") +
+    theme_minimal() +
+    xlab("Clonal abundance (number of genomes)") +
+    ylab("Percentage (%)") +
+    ggtitle("Frequency of unique_sonications") +
+    facet_wrap(~ sample, scales = "free_y") +
+    theme(strip.text.x = element_text(angle = 0, hjust = 0.5),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```
+
+# Fig 15: IS mapping to repetitive regions
+```{r}
+set.seed(123)
+data <- IS_tab %>%
+    mutate(repeat_class = map_chr(str_split(`rmsk(name/class/family)`, pattern = ";"), 
+                                ~ if_else(length(.x) < 2, "no_repeats", .x[2])))
+data$repeat_class <- factor(data$repeat_class, levels = c("no_repeats", unique(data$repeat_class[data$repeat_class != "no_repeats"])))
+
+# Unique categories in repeat_class excluding "no_repeats"
+unique_classes <- setdiff(unique(data$repeat_class), "no_repeats")
+
+# Generate colors for these categories - You can replace hcl with any other color generation method
+colors_for_classes <- setNames(distinctColorPalette(length(unique_classes)), unique_classes)
+
+# Add "no_repeats" color
+colors_for_classes["no_repeats"] <- "grey"
+
+ggplot(data, aes(x = sample, fill = repeat_class)) +
+    geom_bar(position = "fill") +
+    scale_y_continuous(labels = scales::percent_format()) + 
+    theme_minimal() +
+    scale_fill_manual(values = colors_for_classes) +
+    labs(x = "Sample", y = "Count", fill = "Repeat Class", title = "IS in repeat classes",  fill = "Repeat Class") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5, size = 20))
+```
+
+# Fig 16: IS distribution along the vector 
+** without abundance (sites distribution) **  
+```{r fig.width=20, fig.height=18}
+# vector_anno <- read.csv('/home/ubuntu/aav_integration/v1.0.0/data/refs/vector/anno/CAG_EGFP_ITR_corrected.bed', sep = '\t', header = FALSE)
+vector_name <- unique(vector_anno$V1)
+ITR_anno <- vector_anno[grep('ITR', vector_anno$V4), ]
+ITR_5P_s <- ITR_anno[grep('5P', ITR_anno$V4), 2] + 1
+ITR_5P_e <- ITR_anno[grep('5P', ITR_anno$V4), 3]
+
+ITR_3P_s <- ITR_anno[grep('3P', ITR_anno$V4), 2] + 1
+ITR_3P_e <- ITR_anno[grep('3P', ITR_anno$V4), 3]
+
+data <- IS_tab %>%
+    select(sample, vector_align_clip_pos, nReads)
+data$region <- ifelse(between(data$vector_align_clip_pos, ITR_5P_e + 1, ITR_3P_s - 1), "others", "ITR")
+
+data <- data[order(data$sample, data$vector_align_clip_pos),]
+
+ggplot(data, aes(x = vector_align_clip_pos, fill = region, color = region)) +
+    geom_histogram(position = "dodge", binwidth = 10) +
+    theme_minimal() +
+    labs(x = "Vector Clip Position", y = "Number of ISs", title = "IS clip positions along the vector") +
+    scale_fill_manual(values = c("others" = 'blue', "ITR" = 'red')) +
+    scale_color_manual(values = c("others" = 'blue', "ITR" = 'red')) +
+    facet_wrap(~sample, scales = 'free', ncol = 4, strip.position = "top") + 
+    xlim(ITR_5P_s, ITR_3P_e) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5, size = 15),
+            legend.position = "top")
+
+```
+
+** with abundance **  
+```{r fig.width=20, fig.height=18}
+
+ggplot(data, aes(x = vector_align_clip_pos, y = nReads, color = region)) +
+    geom_segment(aes(xend = vector_align_clip_pos, yend = 0), linetype = "solid") +
+    theme_minimal() +
+    labs(x = "Vector Clip Position", y = "Number of Reads", title = "IS clip positions along the vector") +
+    scale_color_manual(values = c("others" = 'blue', "ITR" = 'red')) +
+    facet_wrap(~sample, scales = 'free', ncol = 4, strip.position = "top") + 
+    xlim(ITR_5P_s, ITR_3P_e) +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5, size = 15),
+            legend.position = "top")
+
+```
+
+# Fig 17: circos plot (sample 400 IS events)
+```{r fig.width=8, fig.highlight=8}
+# vector_anno <- read.csv("/mnt/bfx-ops/projects/2023/aav_integration/v1.0.0/data/refs/vector/anno/CAG_EGFP_ITR_corrected.bed", sep = '\t', header = FALSE)
+# vector_name <- unique(vector_anno$V1)
+
+# Creating a joint cytoband (sectors and index for plot)
+host.band <- read.chromInfo("~/references/Mus_musculus/UCSC/mm39/Annotation/chromInfo.txt.gz")$df %>% 
+    filter(!grepl('_|chrM', chr)) %>% 
+    mutate(chr = str_replace(chr, "chr", ""))
+
+
+# aav.band <- as.data.frame(data.table(chr = c("chr_itr_5pr","cmv_enhancer","promoter",
+#                                               "intron","EGFP","polyA","itr_3pr"),
+#                                     start = c(1,183,548,829,1915,2643,2879),
+#                                     end = c(145,547,829,1795,2634,2870,3023)))
+
+
+aav.band <- as.data.frame(data.table(chr = c("5ITR","Vector","3ITR"),
+                                    start = c(0,146,2878),
+                                    end = c(145,2877,3023)))
+
+# Comb band
+cytoband <- rbind(host.band, aav.band)
+
+chromosome.index = c(unique(cytoband$chr))
+
+cytoband$chr <- factor(cytoband$chr, levels = chromosome.index)
+
+# Rescaling the AAV size to emphasize it
+xrange = c(cytoband %>% filter(chr %in% c(seq(1:19),"X", "Y"))%>% pull(end),
+            cytoband %>% filter(!chr %in% c(seq(1:19),"X", "Y")) %>% mutate(length=end-start) %>% pull(length))
+normal_chr_index = 1:21
+zoomed_chr_index = 22:24
+
+# normalize in normal chromsomes and zoomed chromosomes separately
+sector.width = c(xrange[normal_chr_index] / sum(xrange[normal_chr_index]), 
+                0.3*xrange[zoomed_chr_index] / sum(xrange[zoomed_chr_index])) 
+```
+
+```{r fig.width=7, fig.highlight=7}
+# IS data
+data <- IS_tab %>% select(sample, vector, chrom, IS_pos, vector_align_clip_pos, nReads, unique_sonications) %>%
+    filter(unique_sonications >=1) %>%
+    sample_n(min(n(), 400))
+
+expanded_IS_events <- data %>%
+    mutate(chrom = str_replace(chrom, "chr", "")) %>%
+    filter(!grepl('M', chrom)) %>% 
+    separate_rows(vector_align_clip_pos, sep = ",\\s*") %>%  group_by(across(everything())) %>%
+    summarize(reads_per_clip = n(), .groups = 'drop') %>%
+    rename(chr = chrom)
+
+
+# Creating the two bed files
+t.host <- expanded_IS_events %>%
+    mutate(end = IS_pos + 1) %>% 
+    select(chr, IS_pos) %>% 
+    rename(start = IS_pos) %>% as.data.frame()
+
+t.vir <- expanded_IS_events %>%
+    mutate(vector_align_clip_pos = as.integer(vector_align_clip_pos),
+            end = vector_align_clip_pos + 1,
+            chr = case_when(
+                vector_align_clip_pos < 145 ~ "5ITR",
+                vector_align_clip_pos < 2879 ~ "Vector",
+                vector_align_clip_pos >= 2879 ~ "3ITR"
+            )) %>% 
+    select(chr, start = vector_align_clip_pos) %>% as.data.frame()
+
+circos.par("start.degree" = 90)
+circos.initializeWithIdeogram(cytoband, chromosome.index = chromosome.index, sector.width = sector.width, plotType = NULL)
+
+circos.track(ylim = c(0, 1), panel.fun = function(x, y) {
+    chr = CELL_META$sector.index
+    xlim = CELL_META$xlim
+    ylim = CELL_META$ylim
+    circos.rect(xlim[1], 0, xlim[2], 1)
+    circos.text(mean(xlim), mean(ylim), chr, cex = 0.7, col = "#5e5edddf",
+        facing = "inside", niceFacing = TRUE, font =2)
+}, track.height = 0.1, bg.border = NA)
+
+circos.genomicLink(t.host, t.vir, col = '#ff6969', lwd = 0.5)
+
+circos.clear()
+```
+
+# Fig 18: Top 10 clones  
+** Top10 most abundant IS vs the rest amount **
+```{r}
+data <- IS_tab %>%
+    mutate(orth_closest_gene = map_chr(str_split(orth_closest_TSS_info, ";"), 1)) %>%
+    select(sample, chrom, IS_pos, nReads, unique_sonications, orth_closest_gene) %>%
+    group_by(sample) %>%
+    mutate(Percentage = unique_sonications / sum(unique_sonications) * 100) %>%
+    ungroup() 
+
+set.seed(123)
+
+data1 <- data %>%
+    group_by(sample) %>%
+    filter(n() >= 20) %>% # filter samples with only a few IS
+    mutate(random_order = runif(n()), # Add a random number for each row
+            rank = rank(-unique_sonications - random_order)) %>% # Rank by unique_sonications, using random_order to break ties
+    mutate(
+        Top10_or_Rest = if_else(rank <= 10, "Top 10", "Rest"), # Determine if a row is in the top 10 or the rest
+        Percentage = unique_sonications / sum(unique_sonications) * 100 # Calculate percentage of unique_sonications
+    ) %>%
+    ungroup() %>%
+    group_by(sample, Top10_or_Rest) %>%
+    summarise(Sum_Percentage = sum(Percentage)) %>%
+    ungroup()
+
+ggplot(data1, aes(x = sample, y = Sum_Percentage, fill = Top10_or_Rest)) +
+    geom_bar(stat = "identity") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    labs(y = "Percentage", x = "Sample", fill = "Category") +
+    ggtitle("Top 10 vs Rest Percentages") + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```
+
+** top10 IS associated genes **
+```{r fig.width=10, fig.height=16}
+df <- data %>%
+    group_by(sample) %>%
+    filter(n() >= 20) %>%
+    mutate(random_order = runif(n()), # Add a random number for each row
+            rank = rank(-unique_sonications - random_order)) %>% # Rank by nReads, using random_order to break ties
+    filter(rank <= 10) %>% # Keep top 10
+    ungroup() %>%
+    select(-random_order) # Remove the auxiliary columns
+
+# Split the data by sample
+samples <- unique(df$sample)
+
+# Create a list to store plots
+plots <- list()
+
+# Generate a plot for each sample
+for (sample in samples) {
+    p <- ggplot(df[df$sample == sample, ], aes(x=sample, y = Percentage, fill = orth_closest_gene)) +
+        geom_bar(stat = "identity") +
+        labs(title = sample, fill = 'closest gene') +
+        theme(legend.position = "right",
+            axis.text.x = element_blank(),
+            plot.title = element_text(hjust = 0.5, size = 10))
+    plots[[sample]] <- p
+}
+
+# Arrange the plots in a row with patchwork
+n_cols <- min(4, length(plots)) # Ensure not more than 4 columns
+
+# Use wrap_plots from patchwork to arrange them
+plot_layout <- wrap_plots(plots, ncol = n_cols)
+
+# Print the combined plot
+print(plot_layout)
+
+```
+

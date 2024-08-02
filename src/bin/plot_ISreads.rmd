@@ -1,0 +1,68 @@
+---
+title: "IS reads plot"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 3
+    number_sections: yes
+    code_folding: hide
+params:
+    files: x
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+```
+
+```{r include=FALSE}
+library(rmarkdown)
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(zoo)
+```
+
+
+## Truncation hotspots plot
+```{r}
+all_files <- list.files(params$files, pattern = '\\.csv$', full.names = TRUE)
+# all_files <- list.files("~/aav_integration/v1.0.0/data/interim/IS_results/IS_reads/shortRead/230720_M05240_0127_000000000-KVV5C/", pattern = '\\.csv$', full.names = TRUE)
+
+list_of_data_frames <- lapply(all_files, function(file) {
+    df <- read.csv(file, header = TRUE)
+    if(nrow(df) > 0) {
+        df$sample <- gsub("_a1__CAG_EGFP_ITR_corrected__IS\\.csv", "", basename(file))
+        return(df)
+    }
+})
+
+# Combine all data frames into one
+combined_df <- do.call(rbind, list_of_data_frames)
+combined_df <- combined_df %>%
+    select(sample, segment_gap)
+
+# Categorize segment_gap values
+df <- combined_df %>%
+    mutate(category = case_when(
+        segment_gap == 0 ~ 'Precise Breakpoint',
+        segment_gap > 0 ~ 'Insertion',
+        segment_gap < 0 ~ 'Micro-homology'
+    ))
+
+# Calculate percentages
+df_percent <- df %>%
+    group_by(sample, category) %>%
+    summarise(count = n()) %>%
+    mutate(percentage = count / sum(count) * 100) %>%
+    ungroup()
+
+ggplot(df_percent, aes(x = sample, y = percentage, fill = category)) +
+    geom_bar(stat = "identity") +
+    labs(y = "Percentage", x = "Sample", title = "AAV-host junction types ", fill = "IS read types") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5, size = 20))
+```
